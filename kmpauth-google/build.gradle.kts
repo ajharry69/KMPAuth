@@ -47,7 +47,7 @@ kotlin {
             implementation(compose.foundation)
             implementation(libs.koin.compose)
             implementation(libs.koin.core)
-            api(project(":kmpauth-core"))
+            api(project(":KMPAuth:kmpauth-core"))
         }
     }
 }
