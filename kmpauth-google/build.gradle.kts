@@ -40,7 +40,7 @@ kotlin {
             implementation(libs.androidx.credentials.playServicesAuth)
             implementation(libs.googleIdIdentity)
             implementation(libs.koin.android)
-
+            implementation(libs.androidx.activity.compose)
         }
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -74,5 +74,9 @@ android {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
+}
+dependencies {
+    implementation(libs.play.services.auth.base)
+    implementation(libs.play.services.auth)
 }
 

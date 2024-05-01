@@ -38,6 +38,7 @@ internal class GoogleAuthUiProviderImpl(
                     val googleIdTokenCredential =
                         GoogleIdTokenCredential.createFrom(credential.data)
                     GoogleUser(
+                        id = googleIdTokenCredential.id,
                         idToken = googleIdTokenCredential.idToken,
                         accessToken = null,
                         displayName = googleIdTokenCredential.displayName ?: "",

@@ -2,12 +2,17 @@ package com.mmk.kmpauth.google
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.mmk.kmpauth.core.UiContainerScope
+import com.mmk.kmpauth.google.AuthorizationCredentialsResult.AccessAlreadyGranted
+import com.mmk.kmpauth.google.AuthorizationCredentialsResult.AccessShouldBeGranted
 import kotlinx.coroutines.launch
 
 /**
@@ -43,13 +48,47 @@ public fun GoogleButtonUiContainer(
     val coroutineScope = rememberCoroutineScope()
     val updatedOnResultFunc by rememberUpdatedState(onGoogleSignInResult)
 
+    var accessShouldBeGrantedGoogleUserPair by remember {
+        mutableStateOf<Pair<AccessShouldBeGranted, GoogleUser?>?>(null)
+    }
+
+    accessShouldBeGrantedGoogleUserPair?.also { (granted, googleUser) ->
+        val launcher = granted.rememberLauncherForIntent { credentials ->
+            val user = credentials?.accessToken?.let { accessToken ->
+                googleUser?.copy(accessToken = accessToken)
+            }
+            updatedOnResultFunc(user)
+            accessShouldBeGrantedGoogleUserPair = null
+        }
+
+        LaunchedEffect(launcher) {
+            launcher.launch()
+        }
+    }
+
+    val credentialsRetriever = AuthorizationCredentialsRetriever.get()
+
     val uiContainerScope = remember {
         object : UiContainerScope {
             override fun onClick() {
                 println("GoogleUiButtonContainer is clicked")
                 coroutineScope.launch {
                     val googleUser = googleAuthUiProvider.signIn()
-                    updatedOnResultFunc(googleUser)
+                    if (googleUser == null) {
+                        updatedOnResultFunc(googleUser)
+                    } else {
+                        when (val result =
+                            credentialsRetriever.getAuthorizationCredentials(googleUser.id)) {
+                            is AccessAlreadyGranted -> {
+                                val accessToken = result.credentials.accessToken
+                                updatedOnResultFunc(googleUser.copy(accessToken = accessToken))
+                            }
+
+                            is AccessShouldBeGranted -> {
+                                accessShouldBeGrantedGoogleUserPair = result to googleUser
+                            }
+                        }
+                    }
                 }
             }
         }
