@@ -2,12 +2,17 @@ package com.mmk.kmpauth.google
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.mmk.kmpauth.core.UiContainerScope
+import com.mmk.kmpauth.google.AuthorizationCredentialsResult.AccessAlreadyGranted
+import com.mmk.kmpauth.google.AuthorizationCredentialsResult.AccessShouldBeGranted
 import kotlinx.coroutines.launch
 
 /**
@@ -35,7 +40,7 @@ import kotlinx.coroutines.launch
 @Composable
 public fun GoogleButtonUiContainer(
     modifier: Modifier = Modifier,
-    onGoogleSignInResult: (GoogleUser?) -> Unit,
+    onGoogleSignInResult: (GoogleAuthResult) -> Unit,
     content: @Composable UiContainerScope.() -> Unit,
 ) {
     val googleAuthProvider = GoogleAuthProvider.get()
@@ -43,13 +48,58 @@ public fun GoogleButtonUiContainer(
     val coroutineScope = rememberCoroutineScope()
     val updatedOnResultFunc by rememberUpdatedState(onGoogleSignInResult)
 
+    var grantAccessAndGoogleAuthResultPair by remember {
+        mutableStateOf<Pair<AccessShouldBeGranted, GoogleAuthResult.Success>?>(null)
+    }
+
+    grantAccessAndGoogleAuthResultPair?.also { (granted, success) ->
+        val launcher = granted.rememberLauncherForIntent { credentials ->
+            val result = credentials?.accessToken?.let { accessToken ->
+                val user = success.user.copy(accessToken = accessToken)
+                GoogleAuthResult.Success(user = user)
+            } ?: success
+            updatedOnResultFunc(result)
+            // Avoid another request in case the function is recomposed
+            grantAccessAndGoogleAuthResultPair = null
+        }
+
+        LaunchedEffect(launcher) {
+            launch {
+                launcher.launch()
+            }.invokeOnCompletion {
+                if (it != null) {
+                    // Ensure the result is still sent with the access token set
+                    // to the default value.
+                    updatedOnResultFunc(success)
+                }
+            }
+        }
+    }
+
+    val credentialsRetriever = AuthorizationCredentialsRetriever.get()
+
     val uiContainerScope = remember {
         object : UiContainerScope {
             override fun onClick() {
                 println("GoogleUiButtonContainer is clicked")
                 coroutineScope.launch {
-                    val googleUser = googleAuthUiProvider.signIn()
-                    updatedOnResultFunc(googleUser)
+                    when (val authResult = googleAuthUiProvider.signIn()) {
+                        is GoogleAuthResult.Failure -> onGoogleSignInResult(authResult)
+                        is GoogleAuthResult.Success -> {
+                            when (val result =
+                                credentialsRetriever.getAuthorizationCredentials(authResult.user.id)) {
+                                is AccessAlreadyGranted -> {
+                                    val accessToken = result.credentials.accessToken
+                                    val user = authResult.user.copy(accessToken = accessToken)
+                                    updatedOnResultFunc(GoogleAuthResult.Success(user = user))
+                                }
+
+                                is AccessShouldBeGranted -> {
+                                    grantAccessAndGoogleAuthResultPair = result to authResult
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

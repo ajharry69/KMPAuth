@@ -4,6 +4,7 @@ package com.mmk.kmpauth.google
  * GoogleUser class holds most necessary fields
  */
 public data class GoogleUser(
+    val id: String,
     val idToken: String,
     val accessToken:String?=null,
     val displayName: String = "",

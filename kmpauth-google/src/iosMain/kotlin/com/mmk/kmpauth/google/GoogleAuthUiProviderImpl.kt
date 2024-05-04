@@ -8,13 +8,14 @@ import kotlin.coroutines.suspendCoroutine
 
 internal class GoogleAuthUiProviderImpl : GoogleAuthUiProvider {
     @OptIn(ExperimentalForeignApi::class)
-    override suspend fun signIn(): GoogleUser? = suspendCoroutine { continutation ->
+    override suspend fun signIn(): GoogleAuthResult = suspendCoroutine { continutation ->
 
         val rootViewController =
             UIApplication.sharedApplication.keyWindow?.rootViewController
 
-        if (rootViewController == null) continutation.resume(null)
-        else {
+        if (rootViewController == null) {
+            continutation.resume(GoogleAuthResult.Failure(GoogleAuthException.MisconfiguredProvider))
+        } else {
             GIDSignIn.sharedInstance
                 .signInWithPresentingViewController(rootViewController) { gidSignInResult, nsError ->
                     nsError?.let { println("Error While signing: $nsError") }
@@ -25,13 +26,21 @@ internal class GoogleAuthUiProviderImpl : GoogleAuthUiProvider {
                     val profile = gidSignInResult?.user?.profile
                     if (idToken != null && accessToken != null) {
                         val googleUser = GoogleUser(
+                            id = "",
                             idToken = idToken,
                             accessToken = accessToken,
                             displayName = profile?.name ?: "",
                             profilePicUrl = profile?.imageURLWithDimension(320u)?.absoluteString
                         )
-                        continutation.resume(googleUser)
-                    } else continutation.resume(null)
+                        continutation.resume(GoogleAuthResult.Success(googleUser))
+                    } else {
+                        val error = GoogleAuthException.GetCredential(
+                            type = "_",
+                            message = "Error While signing: $nsError",
+                            cause = null
+                        )
+                        continutation.resume(GoogleAuthResult.Failure(error))
+                    }
                 }
 
         }

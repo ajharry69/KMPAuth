@@ -40,7 +40,7 @@ kotlin {
             implementation(compose.material)
             implementation(libs.koin.compose)
             api(libs.firebase.gitlive.auth)
-            implementation(project(":kmpauth-google"))
+            implementation(project(":KMPAuth:kmpauth-google"))
         }
     }
 }
