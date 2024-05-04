@@ -40,7 +40,7 @@ import kotlinx.coroutines.launch
 @Composable
 public fun GoogleButtonUiContainer(
     modifier: Modifier = Modifier,
-    onGoogleSignInResult: (GoogleUser?) -> Unit,
+    onGoogleSignInResult: (GoogleAuthResult) -> Unit,
     content: @Composable UiContainerScope.() -> Unit,
 ) {
     val googleAuthProvider = GoogleAuthProvider.get()
@@ -48,21 +48,31 @@ public fun GoogleButtonUiContainer(
     val coroutineScope = rememberCoroutineScope()
     val updatedOnResultFunc by rememberUpdatedState(onGoogleSignInResult)
 
-    var accessShouldBeGrantedGoogleUserPair by remember {
-        mutableStateOf<Pair<AccessShouldBeGranted, GoogleUser?>?>(null)
+    var grantAccessAndGoogleAuthResultPair by remember {
+        mutableStateOf<Pair<AccessShouldBeGranted, GoogleAuthResult.Success>?>(null)
     }
 
-    accessShouldBeGrantedGoogleUserPair?.also { (granted, googleUser) ->
+    grantAccessAndGoogleAuthResultPair?.also { (granted, success) ->
         val launcher = granted.rememberLauncherForIntent { credentials ->
-            val user = credentials?.accessToken?.let { accessToken ->
-                googleUser?.copy(accessToken = accessToken)
-            }
-            updatedOnResultFunc(user)
-            accessShouldBeGrantedGoogleUserPair = null
+            val result = credentials?.accessToken?.let { accessToken ->
+                val user = success.user.copy(accessToken = accessToken)
+                GoogleAuthResult.Success(user = user)
+            } ?: success
+            updatedOnResultFunc(result)
+            // Avoid another request in case the function is recomposed
+            grantAccessAndGoogleAuthResultPair = null
         }
 
         LaunchedEffect(launcher) {
-            launcher.launch()
+            launch {
+                launcher.launch()
+            }.invokeOnCompletion {
+                if (it != null) {
+                    // Ensure the result is still sent with the access token set
+                    // to the default value.
+                    updatedOnResultFunc(success)
+                }
+            }
         }
     }
 
@@ -73,19 +83,20 @@ public fun GoogleButtonUiContainer(
             override fun onClick() {
                 println("GoogleUiButtonContainer is clicked")
                 coroutineScope.launch {
-                    val googleUser = googleAuthUiProvider.signIn()
-                    if (googleUser == null) {
-                        updatedOnResultFunc(googleUser)
-                    } else {
-                        when (val result =
-                            credentialsRetriever.getAuthorizationCredentials(googleUser.id)) {
-                            is AccessAlreadyGranted -> {
-                                val accessToken = result.credentials.accessToken
-                                updatedOnResultFunc(googleUser.copy(accessToken = accessToken))
-                            }
+                    when (val authResult = googleAuthUiProvider.signIn()) {
+                        is GoogleAuthResult.Failure -> onGoogleSignInResult(authResult)
+                        is GoogleAuthResult.Success -> {
+                            when (val result =
+                                credentialsRetriever.getAuthorizationCredentials(authResult.user.id)) {
+                                is AccessAlreadyGranted -> {
+                                    val accessToken = result.credentials.accessToken
+                                    val user = authResult.user.copy(accessToken = accessToken)
+                                    updatedOnResultFunc(GoogleAuthResult.Success(user = user))
+                                }
 
-                            is AccessShouldBeGranted -> {
-                                accessShouldBeGrantedGoogleUserPair = result to googleUser
+                                is AccessShouldBeGranted -> {
+                                    grantAccessAndGoogleAuthResultPair = result to authResult
+                                }
                             }
                         }
                     }
